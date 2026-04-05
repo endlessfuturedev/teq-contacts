@@ -38,6 +38,19 @@
     <rect width="100%" height="100%" fill="url(#wm)"/>
   </svg>
 
+  <!-- หน้าไม่มีสิทธิ์ -->
+  <div id="accessDenied" class="hidden fixed inset-0 bg-white z-[9000] flex flex-col items-center justify-center p-8 text-center">
+    <div class="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-6">
+      <span style="font-size:48px;">🔒</span>
+    </div>
+    <h1 class="text-2xl font-bold text-gray-800 mb-2">ไม่มีสิทธิ์เข้าใช้งาน</h1>
+    <p class="text-gray-500 text-sm mb-1">ระบบนี้สำหรับพนักงาน</p>
+    <p class="text-blue-700 font-semibold text-sm mb-6">บริษัท ทีอีคิว จำกัด เท่านั้น</p>
+    <p class="text-gray-400 text-xs mb-8">หากคุณเป็นพนักงาน TEQ กรุณาติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์เข้าใช้งาน</p>
+    <button id="requestAccessBtn" onclick="requestAccess()" class="w-full max-w-xs py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-base">📩 ส่งคำขอเข้าใช้งาน</button>
+    <p id="requestSent" class="hidden mt-4 text-green-600 text-sm font-medium">✅ ส่งคำขอแล้ว กรุณารอ Admin อนุมัติ</p>
+  </div>
+
   <div class="sticky-header shadow-md">
     <div class="flex items-center gap-2 px-4 pt-4 pb-2">
       <svg class="w-6 h-6 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -201,7 +214,7 @@
   const ADMIN_PIN = "4592";
 
   let globalData = [], allHospitals = [];
-  let currentLineUser = "ผู้ใช้งาน", isAdmin = false;
+  let currentLineUser = "ผู้ใช้งาน", currentLineUserId = '', isAdmin = false;
   let activeFilter = 'all';
   let pendingCallPhone = '', pendingCallName = '', pendingCallId = '';
   let pinInput = '', deleteTargetId = '';
@@ -226,6 +239,11 @@
       if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
       await getUserProfile();
     } catch(e) { console.error("LIFF:", e.message); }
+
+    // เช็ค whitelist ก่อนโหลดข้อมูล
+    const allowed = await checkWhitelist();
+    if (!allowed) return;
+
     try {
       const data = await gasCall('getContacts');
       renderData(data.contacts);
@@ -236,14 +254,49 @@
 
   async function getUserProfile() {
     try {
+      const profile = await liff.getProfile();
+      currentLineUserId = profile.userId;
       const idToken = liff.getDecodedIDToken();
-      currentLineUser = idToken?.name || (await liff.getProfile()).displayName;
+      currentLineUser = idToken?.name || profile.displayName;
       isAdmin = ADMIN_NAMES.includes(currentLineUser);
       document.getElementById("lineUserBadge").textContent = (isAdmin ? "👑 " : "👤 ") + currentLineUser;
       document.getElementById("lineUserBadge").classList.remove("hidden");
       document.getElementById("wmText").textContent = currentLineUser + " (TEQ) - Confidential";
-      gasCall('logPhoneView', { contactId: '-', viewedBy: currentLineUser + " (LOGIN)", contactName: 'เข้าใช้งานระบบ' });
     } catch(e) { console.error("Profile:", e); }
+  }
+
+  async function checkWhitelist() {
+    try {
+      const res = await gasCall('checkWhitelist', { userId: currentLineUserId });
+      if (res.allowed) {
+        // อนุมัติแล้ว — log login
+        gasCall('logPhoneView', { contactId: '-', viewedBy: currentLineUser + " (LOGIN)", contactName: 'เข้าใช้งานระบบ' });
+        return true;
+      } else {
+        // ไม่อยู่ใน whitelist
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("accessDenied").classList.remove("hidden");
+        return false;
+      }
+    } catch(e) {
+      console.error("Whitelist check error:", e);
+      return false;
+    }
+  }
+
+  async function requestAccess() {
+    const btn = document.getElementById("requestAccessBtn");
+    btn.textContent = "⏳ กำลังส่ง...";
+    btn.disabled = true;
+    try {
+      await gasCall('requestAccess', { userId: currentLineUserId, displayName: currentLineUser });
+      btn.classList.add("hidden");
+      document.getElementById("requestSent").classList.remove("hidden");
+    } catch(e) {
+      btn.textContent = "📩 ส่งคำขอเข้าใช้งาน";
+      btn.disabled = false;
+      showToast("❌ เกิดข้อผิดพลาด กรุณาลองใหม่");
+    }
   }
 
   // ============================================================
