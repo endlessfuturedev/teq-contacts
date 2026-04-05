@@ -206,11 +206,11 @@
   // ============================================================
   // เพิ่ม/ลบ Admin ได้ที่นี่
   // ============================================================
-  const ADMIN_NAMES = [
-    "Sakeson Poungzon",
-    // "ชื่อ Admin 2",
-    // "ชื่อ Admin 3",
-  ];
+  const ADMIN_IDS = [
+  "Uec35e95e6bbaca3c8450ca5773dee4f8", // Sakeson - LINE หลัก
+  // "Uxxxxxxxx", // Sakeson - LINE สำรอง (ถ้าต้องการ)
+  // "Uxxxxxxxx", // Admin คนที่ 2
+];
   const ADMIN_PIN = "4592";
 
   let globalData = [], allHospitals = [];
@@ -258,7 +258,7 @@
       currentLineUserId = profile.userId;
       const idToken = liff.getDecodedIDToken();
       currentLineUser = idToken?.name || profile.displayName;
-      isAdmin = ADMIN_NAMES.includes(currentLineUser);
+      isAdmin = ADMIN_IDS.includes(currentLineUserId);
       document.getElementById("lineUserBadge").textContent = (isAdmin ? "👑 " : "👤 ") + currentLineUser;
       document.getElementById("lineUserBadge").classList.remove("hidden");
       document.getElementById("wmText").textContent = currentLineUser + " (TEQ) - Confidential";
