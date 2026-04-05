@@ -217,16 +217,7 @@
     return data;
   }
 
-  async function gasPost(action, payload = {}) {
-    const res = await fetch(GAS_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...payload })
     });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    return data;
-  }
-
   // ============================================================
   // INIT
   // ============================================================
@@ -252,7 +243,7 @@
       document.getElementById("lineUserBadge").textContent = (isAdmin ? "👑 " : "👤 ") + currentLineUser;
       document.getElementById("lineUserBadge").classList.remove("hidden");
       document.getElementById("wmText").textContent = currentLineUser + " (TEQ) - Confidential";
-      gasPost('logPhoneView', { contactId: '-', viewedBy: currentLineUser + " (LOGIN)", contactName: 'เข้าใช้งานระบบ' });
+      gasCall('logPhoneView', { contactId: '-', viewedBy: currentLineUser + " (LOGIN)", contactName: 'เข้าใช้งานระบบ' });
     } catch(e) { console.error("Profile:", e); }
   }
 
@@ -346,7 +337,7 @@
     if (!el || el.classList.contains("phone-chip")) return;
     el.className = "phone-chip"; el.innerHTML = `📞 ${phone}`;
     el.onclick = () => showCallModal(id, phone, name);
-    gasPost('logPhoneView', { contactId: id, viewedBy: currentLineUser, contactName: name });
+    gasCall('logPhoneView', { contactId: id, viewedBy: currentLineUser, contactName: name });
     showToast(`📋 บันทึกการดูเบอร์ ${name || ''} แล้ว`);
   }
   function showCallModal(id, phone, name) {
@@ -523,7 +514,7 @@
     const action = !id ? 'addContact' : (isEditMode && !isAdmin ? 'editPhoneOnly' : 'editContact');
 
     try {
-      const res = await gasPost(action, payload);
+      const res = await gasCall(action, payload);
       closeForm(); showToast("✅ " + (res.message || "บันทึกสำเร็จ")); setTimeout(()=>location.reload(),1500);
     } catch(e) { showToast("❌ "+e.message); btn.textContent="บันทึก"; btn.disabled=false; }
   }
