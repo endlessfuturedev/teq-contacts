@@ -370,7 +370,7 @@
     if(pinInput===ADMIN_PIN) {
       closePinModal(); closeForm();
       try {
-        const res = await gasPost('deleteContact',{id:deleteTargetId,deletedBy:currentLineUser});
+        const res = await gasCall('deleteContact',{id:deleteTargetId,deletedBy:currentLineUser});
         showToast("🗑 "+(res.message||"ลบสำเร็จ")); setTimeout(()=>location.reload(),1500);
       } catch(e) { showToast("❌ "+e.message); }
     } else {
