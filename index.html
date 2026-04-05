@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TEQ Contact Directory</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.22.3/sdk.js"></script>
+  <style>
+    body { -webkit-user-select: none; user-select: none; background-color: #f3f4f6; font-family: 'Prompt', 'Sarabun', sans-serif; }
+    #watermark { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
+    .loader { border-top-color: #3498db; animation: spinner 1s linear infinite; }
+    @keyframes spinner { to { transform: rotate(360deg); } }
+    .phone-hidden { filter: blur(4px); cursor: pointer; transition: filter 0.3s; background: #dcfce7; border-radius: 6px; padding: 2px 8px; display: inline-block; }
+    .phone-chip { display: inline-flex; align-items: center; gap: 4px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 20px; padding: 4px 10px; font-size: 12px; color: #166534; font-weight: 500; cursor: pointer; }
+    .highlight { background: #fef08a; border-radius: 2px; }
+    .sticky-header { position: fixed; top: 0; left: 0; right: 0; background: #1d4ed8; z-index: 100; }
+    .modal-overlay { transition: opacity 0.2s ease; }
+    .modal-content { transform: translateY(20px); transition: transform 0.25s ease, opacity 0.25s ease; opacity: 0; }
+    .modal-overlay.active .modal-content { transform: translateY(0); opacity: 1; }
+    .filter-tab { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); }
+    .active-tab { background: white !important; color: #1d4ed8 !important; }
+    .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #d1d5db; background: white; transition: all 0.15s; display: inline-block; }
+    .pin-dot.filled { background: #1d4ed8; border-color: #1d4ed8; }
+  </style>
+</head>
+<body class="text-gray-800">
+
+  <svg id="watermark" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="wm" x="0" y="0" width="350" height="200" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)">
+        <text id="wmText" x="30" y="100" font-family="sans-serif" font-size="13" fill="rgba(0,0,0,0.06)">TEQ - Confidential</text>
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#wm)"/>
+  </svg>
+
+  <!-- Header -->
+  <div class="sticky-header shadow-md">
+    <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+      <svg class="w-6 h-6 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      <h1 class="text-white font-bold text-lg">TEQ Contact Directory</h1>
+      <span id="lineUserBadge" class="ml-auto text-blue-200 text-xs hidden"></span>
+    </div>
+    <div class="px-3 pb-3">
+      <div class="relative">
+        <span class="absolute inset-y-0 left-3 flex items-center text-gray-400">🔍</span>
+        <input type="text" id="searchInput" oninput="filterData()" placeholder="ค้นหา รพ., ชื่อ, แผนก..."
+               class="w-full pl-9 pr-9 py-2.5 rounded-xl bg-white text-gray-800 text-base border-0 shadow-inner">
+        <button onclick="clearSearch()" id="clearBtn" class="absolute inset-y-0 right-3 flex items-center text-gray-400 hidden text-xl leading-none">×</button>
+      </div>
+    </div>
+    <div class="flex gap-2 px-3 pb-3 overflow-x-auto" style="-webkit-overflow-scrolling:touch; scrollbar-width:none;">
+      <button onclick="setFilter('all')" id="tab-all" class="filter-tab active-tab flex-shrink-0 text-sm px-3 py-1 rounded-full font-medium transition-all">ทั้งหมด</button>
+      <button onclick="setFilter('เครื่องมือแพทย์')" id="tab-เครื่องมือแพทย์" class="filter-tab flex-shrink-0 text-sm px-3 py-1 rounded-full font-medium">เครื่องมือแพทย์</button>
+      <button onclick="setFilter('NICU')" id="tab-NICU" class="filter-tab flex-shrink-0 text-sm px-3 py-1 rounded-full font-medium">NICU</button>
+      <button onclick="setFilter('PICU')" id="tab-PICU" class="filter-tab flex-shrink-0 text-sm px-3 py-1 rounded-full font-medium">PICU</button>
+      <button onclick="setFilter('หลังคลอด')" id="tab-หลังคลอด" class="filter-tab flex-shrink-0 text-sm px-3 py-1 rounded-full font-medium">หลังคลอด</button>
+      <button onclick="setFilter('พัสดุ')" id="tab-พัสดุ" class="filter-tab flex-shrink-0 text-sm px-3 py-1 rounded-full font-medium">พัสดุ</button>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div id="content" class="pt-36 pb-24 px-3">
+    <div id="statsBar" class="mb-3 flex gap-2 text-xs text-gray-500 hidden">
+      <span id="statTotal" class="bg-white rounded-lg px-3 py-1.5 shadow-sm"></span>
+      <span id="statFiltered" class="bg-white rounded-lg px-3 py-1.5 shadow-sm hidden"></span>
+    </div>
+    <div id="loading" class="flex flex-col justify-center items-center mt-20 gap-3">
+      <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+      <p class="text-gray-400 text-sm">กำลังโหลดข้อมูล...</p>
+    </div>
+    <div id="hospitalList"></div>
+    <div id="emptyState" class="hidden text-center mt-16">
+      <div class="text-5xl mb-3">🔍</div>
+      <p class="text-gray-500 font-medium">ไม่พบข้อมูลที่ค้นหา</p>
+      <p class="text-gray-400 text-sm mt-1">ลองค้นหาด้วยคำอื่น</p>
+    </div>
+  </div>
+
+  <button onclick="openAddForm()" class="fixed bottom-6 right-5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-full shadow-xl flex items-center justify-center z-50 transition-all" style="width:56px;height:56px;font-size:26px;">+</button>
+
+  <!-- MODAL: Add/Edit -->
+  <div id="formModal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 hidden z-[1000] flex justify-center items-end sm:items-center p-0 sm:p-4">
+    <div class="modal-content bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md p-5 pb-10" style="max-height:85vh;overflow-y:auto;">
+      <div class="flex items-center justify-between mb-4">
+        <h2 id="formTitle" class="text-lg font-bold text-blue-700">เพิ่มรายชื่อใหม่</h2>
+        <button onclick="closeForm()" class="text-gray-400 text-2xl leading-none px-2">×</button>
+      </div>
+      <input type="hidden" id="formId">
+      <label class="block text-sm font-medium text-gray-600 mb-1">โรงพยาบาล <span class="text-red-400">*</span></label>
+      <input type="text" id="hospitalInput" list="hospitalSuggestions" placeholder="พิมพ์หรือเลือกโรงพยาบาล"
+             class="w-full border rounded-xl p-3 mb-3 text-sm focus:border-blue-500 focus:outline-none" autocomplete="off">
+      <datalist id="hospitalSuggestions"></datalist>
+      <label class="block text-sm font-medium text-gray-600 mb-1">แผนก</label>
+      <input type="text" id="deptInput" list="deptSuggestions" placeholder="เช่น เครื่องมือแพทย์, NICU"
+             class="w-full border rounded-xl p-3 mb-3 text-sm focus:border-blue-500 focus:outline-none">
+      <datalist id="deptSuggestions">
+        <option value="เครื่องมือแพทย์"><option value="NICU"><option value="PICU">
+        <option value="หลังคลอด"><option value="พัสดุ"><option value="จัดซื้อ">
+        <option value="NS"><option value="RFS">
+      </datalist>
+      <label class="block text-sm font-medium text-gray-600 mb-1">ชื่อผู้ติดต่อ</label>
+      <input type="text" id="nameInput" placeholder="ชื่อเล่น / ชื่อจริง"
+             class="w-full border rounded-xl p-3 mb-3 text-sm focus:border-blue-500 focus:outline-none">
+      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทร 1 <span class="text-red-400">*</span></label>
+      <input type="tel" id="phoneInput1" placeholder="0XX-XXX-XXXX"
+             class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
+      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทร 2</label>
+      <input type="tel" id="phoneInput2" placeholder="ถ้ามี"
+             class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
+      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทร 3</label>
+      <input type="tel" id="phoneInput3" placeholder="ถ้ามี"
+             class="w-full border rounded-xl p-3 mb-4 text-sm focus:border-blue-500 focus:outline-none">
+      <div id="deleteSection" class="hidden mb-3">
+        <button onclick="openPinModal()" class="w-full py-2.5 rounded-xl text-red-500 border border-red-200 text-sm font-medium">
+          🗑 ลบรายชื่อนี้ (Admin เท่านั้น)
+        </button>
+      </div>
+      <div class="flex gap-3">
+        <button onclick="closeForm()" class="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">ยกเลิก</button>
+        <button onclick="saveData()" id="saveBtn" class="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold">บันทึก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Call Confirm -->
+  <div id="callModal" class="fixed inset-0 bg-black bg-opacity-60 hidden z-[2000] flex justify-center items-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-xs p-6 text-center">
+      <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+        <span style="font-size:28px;">📞</span>
+      </div>
+      <p class="text-gray-500 text-sm mb-1">โทรหา</p>
+      <p id="callName" class="font-bold text-gray-800 text-base mb-1"></p>
+      <p id="callPhone" class="text-green-700 font-bold text-2xl mb-5 tracking-wider"></p>
+      <div class="flex gap-3">
+        <button onclick="closeCallModal()" class="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">ยกเลิก</button>
+        <button onclick="confirmCall()" class="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-semibold">📞 โทรเลย</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Admin PIN -->
+  <div id="pinModal" class="fixed inset-0 bg-black bg-opacity-60 hidden z-[3000] flex justify-center items-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-xs p-6 text-center">
+      <div class="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+        <span style="font-size:24px;">🔒</span>
+      </div>
+      <p class="font-bold text-gray-800 mb-1">Admin PIN</p>
+      <p class="text-gray-500 text-xs mb-4">กรอก PIN เพื่อยืนยันการลบ</p>
+      <div class="flex justify-center gap-3 mb-4" id="pinDots">
+        <span class="pin-dot" id="dot-0"></span>
+        <span class="pin-dot" id="dot-1"></span>
+        <span class="pin-dot" id="dot-2"></span>
+        <span class="pin-dot" id="dot-3"></span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 mb-3">
+        <button onclick="pinPress('1')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">1</button>
+        <button onclick="pinPress('2')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">2</button>
+        <button onclick="pinPress('3')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">3</button>
+        <button onclick="pinPress('4')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">4</button>
+        <button onclick="pinPress('5')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">5</button>
+        <button onclick="pinPress('6')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">6</button>
+        <button onclick="pinPress('7')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">7</button>
+        <button onclick="pinPress('8')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">8</button>
+        <button onclick="pinPress('9')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">9</button>
+        <button onclick="closePinModal()" class="py-3 bg-gray-100 rounded-xl text-sm text-gray-500 font-medium">ยกเลิก</button>
+        <button onclick="pinPress('0')" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">0</button>
+        <button onclick="pinBackspace()" class="py-3 bg-gray-50 rounded-xl text-lg font-medium active:bg-gray-200">⌫</button>
+      </div>
+      <p id="pinError" class="text-red-500 text-xs hidden">PIN ไม่ถูกต้อง</p>
+    </div>
+  </div>
+
+  <div id="toast" class="fixed top-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg opacity-0 pointer-events-none z-[4000] transition-all duration-300"></div>
+
+  <script>
+  const LIFF_ID = "2009684355-yphE6PJr";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbwtVnhbc6nUINSBga7f7oaebEFeXFBsIijxPLTflKnUejGGqniW5jHJGg8PFhtPWom9/exec";
+  const ADMIN_NAMES = ["Sakeson Poungzon"];
+  const ADMIN_PIN = "4592";
+
+  let globalData = [];
+  let currentLineUser = "ผู้ใช้งาน";
+  let isAdmin = false;
+  let activeFilter = 'all';
+  let pendingCallPhone = '';
+  let pendingCallName = '';
+  let pendingCallId = '';
+  let pinInput = '';
+  let deleteTargetId = '';
+
+  // ============================================================
+  // API CALL (fetch แทน google.script.run)
+  // ============================================================
+  async function gasCall(action, payload = {}) {
+    const params = new URLSearchParams({ action, ...payload });
+    const res = await fetch(`${GAS_URL}?${params}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+
+  async function gasPost(action, payload = {}) {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+
+  // ============================================================
+  // INIT
+  // ============================================================
+  window.onload = async function () {
+    // โหลด LIFF ก่อน
+    try {
+      console.log("starting liff init...");
+      await liff.init({ liffId: LIFF_ID });
+      console.log("liff init ok, isLoggedIn:", liff.isLoggedIn());
+
+      if (!liff.isLoggedIn()) {
+        liff.login({ redirectUri: window.location.href });
+        return;
+      }
+
+      await getUserProfile();
+    } catch(e) {
+      console.error("LIFF Error:", e.message);
+    }
+
+    // โหลดข้อมูลจาก GAS
+    try {
+      const data = await gasCall('getContacts');
+      console.log("contacts length:", data.contacts.length);
+      renderData(data.contacts);
+    } catch(e) {
+      console.error("Load error:", e.message);
+      document.getElementById("loading").innerHTML = `<p class="text-red-400 text-sm">โหลดข้อมูลไม่สำเร็จ</p>`;
+    }
+  };
+
+  async function getUserProfile() {
+    try {
+      const idToken = liff.getDecodedIDToken();
+      if (idToken && idToken.name) {
+        currentLineUser = idToken.name;
+      } else {
+        const profile = await liff.getProfile();
+        currentLineUser = profile.displayName;
+      }
+      isAdmin = ADMIN_NAMES.includes(currentLineUser);
+      document.getElementById("lineUserBadge").textContent = (isAdmin ? "👑 " : "👤 ") + currentLineUser;
+      document.getElementById("lineUserBadge").classList.remove("hidden");
+      document.getElementById("wmText").textContent = currentLineUser + " (TEQ) - Confidential";
+      gasPost('logPhoneView', { contactId: '-', viewedBy: currentLineUser + " (LOGIN)", contactName: 'เข้าใช้งานระบบ' });
+    } catch(e) {
+      console.error("Profile error:", e);
+    }
+  }
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+  function renderData(data) {
+    globalData = data || [];
+    const hospitals = [...new Set(data.map(d => d.Hospital))].sort();
+    document.getElementById("hospitalSuggestions").innerHTML = hospitals.map(h => `<option value="${h}">`).join("");
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("statsBar").classList.remove("hidden");
+    updateStats(data.length, data.length);
+    displayList(data);
+  }
+
+  function displayList(items) {
+    const q = document.getElementById("searchInput").value.trim();
+    const container = document.getElementById("hospitalList");
+    const empty = document.getElementById("emptyState");
+    if (!items || items.length === 0) { container.innerHTML = ""; empty.classList.remove("hidden"); return; }
+    empty.classList.add("hidden");
+    const grouped = {};
+    items.forEach(c => {
+      const h = c.Hospital || "(ไม่ระบุ รพ.)";
+      if (!grouped[h]) grouped[h] = [];
+      grouped[h].push(c);
+    });
+    container.innerHTML = Object.entries(grouped).map(([hName, contacts]) => `
+      <div class="bg-white rounded-2xl shadow-sm mb-3 border border-gray-100 overflow-hidden">
+        <div class="flex justify-between items-center px-4 py-3 bg-gradient-to-r from-blue-50 to-white border-b border-blue-100">
+          <h3 class="font-bold text-blue-800 text-base">${highlight(hName, q)}</h3>
+          <button onclick="openAddFormForHospital('${escAttr(hName)}')" class="text-xs text-blue-600 bg-white border border-blue-200 px-2.5 py-1 rounded-full flex-shrink-0 ml-2">+ เพิ่ม</button>
+        </div>
+        <div>${contacts.map(c => contactRow(c, q)).join('')}</div>
+      </div>`).join('');
+  }
+
+  function contactRow(c, q) {
+    const dept = c.Department && c.Department !== '-' ? c.Department : '<span class="text-gray-400 text-xs">ไม่ระบุแผนก</span>';
+    const name = c.ContactName && c.ContactName !== '-' ? c.ContactName : '';
+    const phones = [c.Phone, c.Phone2, c.Phone3].filter(p => p && p !== '-' && p.trim() !== '');
+    const phoneHTML = phones.length > 0
+      ? phones.map((p, i) => `<span class="phone-hidden text-sm" id="phone-${c.ID}-${i}" onclick="revealPhone('${c.ID}','${escAttr(p)}','${escAttr(c.ContactName)}',${i})" title="แตะเพื่อดูเบอร์">${p}</span>`).join('')
+      : '<span class="text-gray-400 text-xs">ไม่มีเบอร์</span>';
+    return `
+      <div class="flex justify-between items-start px-4 py-3 border-b border-gray-50 last:border-0 gap-2">
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-gray-800 text-sm">${typeof dept === 'string' ? highlight(dept, q) : dept}</p>
+          ${name ? `<p class="text-xs text-gray-500 mt-0.5">👤 ${highlight(name, q)}</p>` : ''}
+        </div>
+        <div class="flex flex-col items-end gap-1 flex-shrink-0">
+          <div class="flex flex-col items-end gap-1">${phoneHTML}</div>
+          <button onclick="openEditForm('${c.ID}','${escAttr(c.Hospital)}','${escAttr(c.Department)}','${escAttr(c.ContactName)}','${escAttr(c.Phone||'')}','${escAttr(c.Phone2||'')}','${escAttr(c.Phone3||'')}')"
+                  class="text-xs text-gray-400 hover:text-blue-500 underline mt-1">✎ แก้ไข</button>
+        </div>
+      </div>`;
+  }
+
+  // ============================================================
+  // PHONE REVEAL + CALL
+  // ============================================================
+  function revealPhone(id, phone, name, idx) {
+    const el = document.getElementById(`phone-${id}-${idx}`);
+    if (!el || el.classList.contains("phone-chip")) return;
+    el.className = "phone-chip";
+    el.innerHTML = `📞 ${phone}`;
+    el.onclick = () => showCallModal(id, phone, name);
+    gasPost('logPhoneView', { contactId: id, viewedBy: currentLineUser, contactName: name });
+    showToast(`📋 บันทึกการดูเบอร์ ${name || ''} แล้ว`);
+  }
+
+  function showCallModal(id, phone, name) {
+    pendingCallPhone = phone; pendingCallName = name; pendingCallId = id;
+    document.getElementById("callName").textContent = name || '-';
+    document.getElementById("callPhone").textContent = phone;
+    document.getElementById("callModal").classList.remove("hidden");
+  }
+
+  function closeCallModal() {
+    document.getElementById("callModal").classList.add("hidden");
+    pendingCallPhone = ''; pendingCallName = ''; pendingCallId = '';
+  }
+
+  function confirmCall() {
+    const phone = pendingCallPhone.replace(/[^0-9+]/g, '');
+    closeCallModal();
+    setTimeout(() => { location.href = "tel:" + phone; }, 200);
+  }
+
+  // ============================================================
+  // ADMIN PIN
+  // ============================================================
+  function openPinModal() {
+    pinInput = '';
+    updatePinDots();
+    document.getElementById("pinError").classList.add("hidden");
+    document.getElementById("pinModal").classList.remove("hidden");
+    deleteTargetId = document.getElementById("formId").value;
+  }
+
+  function closePinModal() {
+    document.getElementById("pinModal").classList.add("hidden");
+    pinInput = '';
+  }
+
+  function pinPress(num) {
+    if (pinInput.length >= 4) return;
+    pinInput += num;
+    updatePinDots();
+    if (pinInput.length === 4) setTimeout(checkPin, 150);
+  }
+
+  function pinBackspace() {
+    pinInput = pinInput.slice(0, -1);
+    updatePinDots();
+    document.getElementById("pinError").classList.add("hidden");
+  }
+
+  function updatePinDots() {
+    for (let i = 0; i < 4; i++) {
+      document.getElementById(`dot-${i}`).classList.toggle("filled", i < pinInput.length);
+    }
+  }
+
+  async function checkPin() {
+    if (pinInput === ADMIN_PIN) {
+      closePinModal();
+      closeForm();
+      try {
+        const res = await gasPost('deleteContact', { id: deleteTargetId, deletedBy: currentLineUser });
+        showToast("🗑 " + (res.message || "ลบสำเร็จ"));
+        setTimeout(() => location.reload(), 1500);
+      } catch(e) {
+        showToast("❌ " + e.message);
+      }
+    } else {
+      pinInput = '';
+      updatePinDots();
+      document.getElementById("pinError").classList.remove("hidden");
+      const modal = document.querySelector('#pinModal .bg-white');
+      modal.style.transform = 'translateX(-8px)';
+      setTimeout(() => { modal.style.transform = 'translateX(8px)'; }, 100);
+      setTimeout(() => { modal.style.transform = 'translateX(0)'; }, 200);
+    }
+  }
+
+  // ============================================================
+  // SEARCH & FILTER
+  // ============================================================
+  function filterData() {
+    const q = document.getElementById("searchInput").value.toLowerCase().trim();
+    document.getElementById("clearBtn").classList.toggle("hidden", q.length === 0);
+    applyFilters();
+  }
+
+  function setFilter(val) {
+    activeFilter = val;
+    document.querySelectorAll(".filter-tab").forEach(el => el.classList.remove("active-tab"));
+    document.getElementById("tab-" + val)?.classList.add("active-tab");
+    applyFilters();
+  }
+
+  function applyFilters() {
+    const q = document.getElementById("searchInput").value.toLowerCase().trim();
+    let filtered = globalData.filter(item => {
+      const matchSearch = !q ||
+        [item.Hospital, item.ContactName, item.Department, item.Phone, item.Phone2, item.Phone3]
+          .some(v => String(v || '').toLowerCase().includes(q));
+      const matchFilter = activeFilter === 'all' || String(item.Department || '').includes(activeFilter);
+      return matchSearch && matchFilter;
+    });
+    updateStats(globalData.length, filtered.length);
+    displayList(filtered);
+  }
+
+  function clearSearch() {
+    document.getElementById("searchInput").value = "";
+    document.getElementById("clearBtn").classList.add("hidden");
+    applyFilters();
+  }
+
+  function updateStats(total, showing) {
+    document.getElementById("statTotal").textContent = `📋 ทั้งหมด ${total} รายชื่อ`;
+    const el = document.getElementById("statFiltered");
+    if (showing < total) { el.textContent = `🔍 แสดง ${showing} รายการ`; el.classList.remove("hidden"); }
+    else { el.classList.add("hidden"); }
+  }
+
+  // ============================================================
+  // FORM
+  // ============================================================
+  function openAddForm() {
+    resetForm();
+    document.getElementById("formTitle").textContent = "เพิ่มรายชื่อใหม่";
+    document.getElementById("hospitalInput").readOnly = false;
+    document.getElementById("deleteSection").classList.add("hidden");
+    showModal();
+  }
+
+  function openAddFormForHospital(hospital) {
+    resetForm();
+    document.getElementById("formTitle").textContent = "เพิ่มรายชื่อ " + hospital;
+    document.getElementById("hospitalInput").value = hospital;
+    document.getElementById("hospitalInput").readOnly = true;
+    document.getElementById("deleteSection").classList.add("hidden");
+    showModal();
+  }
+
+  function openEditForm(id, hospital, dept, name, phone1, phone2, phone3) {
+    resetForm();
+    document.getElementById("formTitle").textContent = "แก้ไขข้อมูล";
+    document.getElementById("formId").value = id;
+    document.getElementById("hospitalInput").value = hospital;
+    document.getElementById("hospitalInput").readOnly = true;
+    document.getElementById("deptInput").value = dept !== '-' ? dept : '';
+    document.getElementById("nameInput").value = name !== '-' ? name : '';
+    document.getElementById("phoneInput1").value = phone1 || '';
+    document.getElementById("phoneInput2").value = phone2 || '';
+    document.getElementById("phoneInput3").value = phone3 || '';
+    document.getElementById("deleteSection").classList.toggle("hidden", !isAdmin);
+    showModal();
+  }
+
+  function showModal() {
+    const modal = document.getElementById("formModal");
+    modal.classList.remove("hidden");
+    setTimeout(() => modal.classList.add("active"), 10);
+  }
+
+  function closeForm() {
+    const modal = document.getElementById("formModal");
+    modal.classList.remove("active");
+    setTimeout(() => modal.classList.add("hidden"), 250);
+  }
+
+  function resetForm() {
+    ['formId','hospitalInput','deptInput','nameInput','phoneInput1','phoneInput2','phoneInput3']
+      .forEach(id => { document.getElementById(id).value = ""; });
+    const btn = document.getElementById("saveBtn");
+    btn.textContent = "บันทึก"; btn.disabled = false;
+  }
+
+  async function saveData() {
+    const hospital = document.getElementById("hospitalInput").value.trim();
+    const phone1 = document.getElementById("phoneInput1").value.trim();
+    if (!hospital || !phone1) { showToast("⚠️ กรุณากรอกโรงพยาบาลและเบอร์ที่ 1"); return; }
+    const btn = document.getElementById("saveBtn");
+    btn.textContent = "⏳ กำลังบันทึก..."; btn.disabled = true;
+    const payload = {
+      id: document.getElementById("formId").value,
+      hospital,
+      department: document.getElementById("deptInput").value.trim() || '-',
+      name: document.getElementById("nameInput").value.trim() || '-',
+      phone: phone1,
+      phone2: document.getElementById("phoneInput2").value.trim() || '',
+      phone3: document.getElementById("phoneInput3").value.trim() || '',
+      addedBy: currentLineUser + " (LINE)"
+    };
+    const action = payload.id === '' ? 'addContact' : 'editContact';
+    try {
+      const res = await gasPost(action, payload);
+      closeForm();
+      showToast("✅ " + (res.message || "บันทึกสำเร็จ"));
+      setTimeout(() => location.reload(), 1500);
+    } catch(e) {
+      showToast("❌ " + e.message);
+      btn.textContent = "บันทึก"; btn.disabled = false;
+    }
+  }
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+  function highlight(text, q) {
+    if (!q || !text) return text;
+    const regex = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return String(text).replace(regex, '<mark class="highlight">$1</mark>');
+  }
+
+  function escAttr(str) { return String(str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+  function showToast(msg, duration = 3000) {
+    const el = document.getElementById("toast");
+    el.textContent = msg; el.style.opacity = "1";
+    setTimeout(() => { el.style.opacity = "0"; }, duration);
+  }
+
+  document.addEventListener('focusin', (e) => {
+    if (e.target.matches('input')) {
+      setTimeout(() => { e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300);
+    }
+  });
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      const modal = document.querySelector('.modal-content');
+      if (!modal) return;
+      modal.style.marginBottom = window.visualViewport.height < window.innerHeight * 0.75 ? '30vh' : '0';
+    });
+  }
+  </script>
+</body>
+</html>
