@@ -10,6 +10,7 @@
     body { background-color: #f3f4f6; font-family: 'Prompt', 'Sarabun', sans-serif; }
     * { -webkit-user-select: none !important; user-select: none !important; }
     input, textarea, select { -webkit-user-select: text !important; user-select: text !important; }
+    input[readonly] { background-color: #f3f4f6 !important; color: #9ca3af !important; -webkit-user-select: none !important; user-select: none !important; }
     #watermark { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
     .loader { border-top-color: #3498db; animation: spinner 1s linear infinite; }
     @keyframes spinner { to { transform: rotate(360deg); } }
@@ -24,6 +25,7 @@
     .active-tab { background: white !important; color: #1d4ed8 !important; }
     .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #d1d5db; background: white; transition: all 0.15s; display: inline-block; }
     .pin-dot.filled { background: #1d4ed8; border-color: #1d4ed8; }
+    .field-locked { background-color: #f9fafb !important; color: #6b7280 !important; cursor: not-allowed; }
   </style>
 </head>
 <body class="text-gray-800">
@@ -90,7 +92,12 @@
       </div>
       <input type="hidden" id="formId">
 
-      <label class="block text-sm font-medium text-gray-600 mb-1">โรงพยาบาล <span class="text-red-400">*</span></label>
+      <!-- แจ้งเตือนสำหรับ non-admin ในโหมดแก้ไข -->
+      <div id="editNotice" class="hidden mb-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-700">
+        🔒 คุณสามารถแก้ไขได้เฉพาะ <strong>เบอร์ 2 และเบอร์ 3</strong> เท่านั้น<br>หากต้องการแก้ไขข้อมูลอื่น กรุณาติดต่อ Admin
+      </div>
+
+      <label class="block text-sm font-medium text-gray-600 mb-1">โรงพยาบาล <span id="reqHosp" class="text-red-400">*</span></label>
       <div class="relative mb-3">
         <input type="text" id="hospitalInput" placeholder="พิมพ์หรือเลือกโรงพยาบาล"
                class="w-full border rounded-xl p-3 text-sm focus:border-blue-500 focus:outline-none" autocomplete="off"
@@ -116,11 +123,13 @@
       <label class="block text-sm font-medium text-gray-600 mb-1">ชื่อผู้ติดต่อ</label>
       <input type="text" id="nameInput" placeholder="ชื่อเล่น / ชื่อจริง" class="w-full border rounded-xl p-3 mb-3 text-sm focus:border-blue-500 focus:outline-none">
 
-      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทร 1 <span class="text-red-400">*</span></label>
+      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทรหลัก <span id="reqPhone" class="text-red-400">*</span></label>
       <input type="tel" id="phoneInput1" placeholder="0XX-XXX-XXXX" class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
-      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทร 2</label>
-      <input type="tel" id="phoneInput2" placeholder="ถ้ามี" class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
-      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทร 3</label>
+
+      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์ 2 / เบอร์ต่อ</label>
+      <input type="tel" id="phoneInput2" placeholder="เช่น 081-234-5678 หรือ ต่อ 101" class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
+
+      <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์ 3</label>
       <input type="tel" id="phoneInput3" placeholder="ถ้ามี" class="w-full border rounded-xl p-3 mb-4 text-sm focus:border-blue-500 focus:outline-none">
 
       <div id="deleteSection" class="hidden mb-3">
@@ -181,7 +190,9 @@
   const LIFF_ID = "2009684355-yphE6PJr";
   const GAS_URL = "https://script.google.com/macros/s/AKfycbwtVnhbc6nUINSBga7f7oaebEFeXFBsIijxPLTflKnUejGGqniW5jHJGg8PFhtPWom9/exec";
 
-  // เพิ่ม/ลบ admin ได้ที่นี่
+  // ============================================================
+  // เพิ่ม/ลบ Admin ได้ที่นี่
+  // ============================================================
   const ADMIN_NAMES = [
     "Sakeson Poungzon",
     // "ชื่อ Admin 2",
@@ -194,7 +205,11 @@
   let activeFilter = 'all';
   let pendingCallPhone = '', pendingCallName = '', pendingCallId = '';
   let pinInput = '', deleteTargetId = '';
+  let isEditMode = false; // track ว่าอยู่ใน mode แก้ไขหรือเปล่า
 
+  // ============================================================
+  // API
+  // ============================================================
   async function gasCall(action, payload = {}) {
     const res = await fetch(`${GAS_URL}?${new URLSearchParams({ action, ...payload })}`);
     const data = await res.json();
@@ -212,6 +227,9 @@
     return data;
   }
 
+  // ============================================================
+  // INIT
+  // ============================================================
   window.onload = async function () {
     try {
       await liff.init({ liffId: LIFF_ID });
@@ -238,6 +256,9 @@
     } catch(e) { console.error("Profile:", e); }
   }
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   function renderData(data) {
     globalData = data || [];
     allHospitals = [...new Set(data.map(d => d.Hospital))].sort();
@@ -272,9 +293,8 @@
     const phoneHTML = phones.length > 0
       ? phones.map((p, i) => `<span class="phone-hidden text-sm" id="phone-${c.ID}-${i}" onclick="revealPhone('${c.ID}','${escAttr(p)}','${escAttr(c.ContactName)}',${i})">${p}</span>`).join('')
       : '<span class="text-gray-400 text-xs">ไม่มีเบอร์</span>';
-    const editBtn = isAdmin
-      ? `<button onclick="openEditForm('${c.ID}','${escAttr(c.Hospital)}','${escAttr(c.Department)}','${escAttr(c.ContactName)}','${escAttr(c.Phone||'')}','${escAttr(c.Phone2||'')}','${escAttr(c.Phone3||'')}')" class="text-xs text-gray-400 underline mt-1">✎ แก้ไข</button>`
-      : '';
+    // ทุกคนเห็นปุ่มแก้ไข
+    const editBtn = `<button onclick="openEditForm('${c.ID}','${escAttr(c.Hospital)}','${escAttr(c.Department)}','${escAttr(c.ContactName)}','${escAttr(c.Phone||'')}','${escAttr(c.Phone2||'')}','${escAttr(c.Phone3||'')}')" class="text-xs text-gray-400 underline mt-1">✎ แก้ไข</button>`;
     return `
       <div class="flex justify-between items-start px-4 py-3 border-b border-gray-50 last:border-0 gap-2">
         <div class="min-w-0 flex-1">
@@ -288,7 +308,9 @@
       </div>`;
   }
 
-  // Hospital dropdown
+  // ============================================================
+  // HOSPITAL DROPDOWN
+  // ============================================================
   function filterHospitalSuggestions(val) {
     const dropdown = document.getElementById("hospitalDropdown");
     const filtered = val ? allHospitals.filter(h => h.toLowerCase().includes(val.toLowerCase())) : allHospitals;
@@ -302,7 +324,9 @@
   function hideHospitalSuggestions() { setTimeout(() => document.getElementById("hospitalDropdown").classList.add("hidden"), 200); }
   function selectHospital(name) { document.getElementById("hospitalInput").value = name; document.getElementById("hospitalDropdown").classList.add("hidden"); }
 
-  // Dept
+  // ============================================================
+  // DEPT
+  // ============================================================
   function onDeptChange() {
     const other = document.getElementById("deptOther");
     if (document.getElementById("deptInput").value === 'อื่นๆ') { other.classList.remove("hidden"); other.focus(); }
@@ -314,7 +338,9 @@
     return sel || '-';
   }
 
-  // Phone
+  // ============================================================
+  // PHONE REVEAL + CALL
+  // ============================================================
   function revealPhone(id, phone, name, idx) {
     const el = document.getElementById(`phone-${id}-${idx}`);
     if (!el || el.classList.contains("phone-chip")) return;
@@ -332,7 +358,9 @@
   function closeCallModal() { document.getElementById("callModal").classList.add("hidden"); }
   function confirmCall() { const p = pendingCallPhone.replace(/[^0-9+]/g,''); closeCallModal(); setTimeout(() => { location.href="tel:"+p; }, 200); }
 
+  // ============================================================
   // PIN
+  // ============================================================
   function openPinModal() { pinInput=''; updatePinDots(); document.getElementById("pinError").classList.add("hidden"); document.getElementById("pinModal").classList.remove("hidden"); deleteTargetId=document.getElementById("formId").value; }
   function closePinModal() { document.getElementById("pinModal").classList.add("hidden"); pinInput=''; }
   function pinPress(num) { if(pinInput.length>=4)return; pinInput+=num; updatePinDots(); if(pinInput.length===4)setTimeout(checkPin,150); }
@@ -341,8 +369,10 @@
   async function checkPin() {
     if(pinInput===ADMIN_PIN) {
       closePinModal(); closeForm();
-      try { const res=await gasPost('deleteContact',{id:deleteTargetId,deletedBy:currentLineUser}); showToast("🗑 "+(res.message||"ลบสำเร็จ")); setTimeout(()=>location.reload(),1500); }
-      catch(e) { showToast("❌ "+e.message); }
+      try {
+        const res = await gasPost('deleteContact',{id:deleteTargetId,deletedBy:currentLineUser});
+        showToast("🗑 "+(res.message||"ลบสำเร็จ")); setTimeout(()=>location.reload(),1500);
+      } catch(e) { showToast("❌ "+e.message); }
     } else {
       pinInput=''; updatePinDots(); document.getElementById("pinError").classList.remove("hidden");
       const m=document.querySelector('#pinModal .bg-white');
@@ -350,7 +380,9 @@
     }
   }
 
-  // Search & Filter
+  // ============================================================
+  // SEARCH & FILTER
+  // ============================================================
   function filterData() { const q=document.getElementById("searchInput").value.toLowerCase().trim(); document.getElementById("clearBtn").classList.toggle("hidden",q.length===0); applyFilters(); }
   function setFilter(val) { activeFilter=val; document.querySelectorAll(".filter-tab").forEach(el=>el.classList.remove("active-tab")); document.getElementById("tab-"+val)?.classList.add("active-tab"); applyFilters(); }
   function applyFilters() {
@@ -369,47 +401,125 @@
     if(showing<total){el.textContent=`🔍 แสดง ${showing} รายการ`;el.classList.remove("hidden");}else{el.classList.add("hidden");}
   }
 
-  // Form
-  function openAddForm() { resetForm(); document.getElementById("formTitle").textContent="เพิ่มรายชื่อใหม่"; document.getElementById("hospitalInput").readOnly=false; document.getElementById("deleteSection").classList.add("hidden"); showModal(); }
-  function openAddFormForHospital(hospital) { resetForm(); document.getElementById("formTitle").textContent="เพิ่มรายชื่อ "+hospital; document.getElementById("hospitalInput").value=hospital; document.getElementById("hospitalInput").readOnly=true; document.getElementById("deleteSection").classList.add("hidden"); showModal(); }
-  function openEditForm(id,hospital,dept,name,phone1,phone2,phone3) {
-    if(!isAdmin)return;
+  // ============================================================
+  // FORM — lock fields ตาม role
+  // ============================================================
+  function setFieldsLock(locked) {
+    // fields ที่ lock เฉพาะ non-admin
+    const lockedFields = ['hospitalInput', 'nameInput', 'phoneInput1'];
+    const lockedSelects = ['deptInput'];
+
+    lockedFields.forEach(id => {
+      const el = document.getElementById(id);
+      el.readOnly = locked;
+      el.classList.toggle('field-locked', locked);
+    });
+    lockedSelects.forEach(id => {
+      const el = document.getElementById(id);
+      el.disabled = locked;
+      el.classList.toggle('field-locked', locked);
+    });
+
+    // แสดง notice และปุ่มลบเฉพาะ admin
+    document.getElementById("editNotice").classList.toggle("hidden", !locked);
+    document.getElementById("deleteSection").classList.toggle("hidden", !isAdmin || !isEditMode);
+  }
+
+  function openAddForm() {
+    isEditMode = false;
     resetForm();
-    document.getElementById("formTitle").textContent="แก้ไขข้อมูล";
-    document.getElementById("formId").value=id;
-    document.getElementById("hospitalInput").value=hospital; document.getElementById("hospitalInput").readOnly=true;
+    document.getElementById("formTitle").textContent = "เพิ่มรายชื่อใหม่";
+    setFieldsLock(false);
+    showModal();
+  }
+
+  function openAddFormForHospital(hospital) {
+    isEditMode = false;
+    resetForm();
+    document.getElementById("formTitle").textContent = "เพิ่มรายชื่อ " + hospital;
+    document.getElementById("hospitalInput").value = hospital;
+    setFieldsLock(false);
+    document.getElementById("hospitalInput").readOnly = true;
+    document.getElementById("hospitalInput").classList.add('field-locked');
+    showModal();
+  }
+
+  function openEditForm(id,hospital,dept,name,phone1,phone2,phone3) {
+    isEditMode = true;
+    resetForm();
+    document.getElementById("formTitle").textContent = "แก้ไขข้อมูล";
+    document.getElementById("formId").value = id;
+    document.getElementById("hospitalInput").value = hospital;
+
+    // set dept
     const knownDepts=["เครื่องมือแพทย์","NICU","PICU","หลังคลอด","พัสดุ","จัดซื้อ","NS","RFS"];
     const deptVal=dept!=='-'?dept:'';
     if(knownDepts.includes(deptVal)){document.getElementById("deptInput").value=deptVal;}
     else if(deptVal){document.getElementById("deptInput").value='อื่นๆ';document.getElementById("deptOther").value=deptVal;document.getElementById("deptOther").classList.remove("hidden");}
+
     document.getElementById("nameInput").value=name!=='-'?name:'';
-    document.getElementById("phoneInput1").value=phone1||''; document.getElementById("phoneInput2").value=phone2||''; document.getElementById("phoneInput3").value=phone3||'';
-    document.getElementById("deleteSection").classList.remove("hidden");
+    document.getElementById("phoneInput1").value=phone1||'';
+    document.getElementById("phoneInput2").value=phone2||'';
+    document.getElementById("phoneInput3").value=phone3||'';
+
+    // lock fields ตาม role
+    setFieldsLock(!isAdmin);
     showModal();
   }
+
   function showModal() { const m=document.getElementById("formModal"); m.classList.remove("hidden"); setTimeout(()=>m.classList.add("active"),10); }
-  function closeForm() { const m=document.getElementById("formModal"); m.classList.remove("active"); setTimeout(()=>m.classList.add("hidden"),250); }
+  function closeForm() { const m=document.getElementById("formModal"); m.classList.remove("active"); setTimeout(()=>m.classList.add("hidden"),250); isEditMode=false; }
+
   function resetForm() {
     ["formId","hospitalInput","nameInput","phoneInput1","phoneInput2","phoneInput3"].forEach(id=>document.getElementById(id).value="");
     document.getElementById("deptInput").value=""; document.getElementById("deptOther").value=""; document.getElementById("deptOther").classList.add("hidden");
+    document.getElementById("editNotice").classList.add("hidden");
+    document.getElementById("deleteSection").classList.add("hidden");
     const btn=document.getElementById("saveBtn"); btn.textContent="บันทึก"; btn.disabled=false;
   }
+
   async function saveData() {
-    const hospital=document.getElementById("hospitalInput").value.trim();
-    const phone1=document.getElementById("phoneInput1").value.trim();
-    if(!hospital||!phone1){showToast("⚠️ กรุณากรอกโรงพยาบาลและเบอร์ที่ 1");return;}
-    const btn=document.getElementById("saveBtn"); btn.textContent="⏳ กำลังบันทึก..."; btn.disabled=true;
-    const payload={id:document.getElementById("formId").value,hospital,department:getDeptValue(),name:document.getElementById("nameInput").value.trim()||'-',phone:phone1,phone2:document.getElementById("phoneInput2").value.trim()||'',phone3:document.getElementById("phoneInput3").value.trim()||'',addedBy:currentLineUser+" (LINE)"};
+    const id = document.getElementById("formId").value;
+    const phone2 = document.getElementById("phoneInput2").value.trim();
+    const phone3 = document.getElementById("phoneInput3").value.trim();
+
+    let payload;
+
+    if (isEditMode && !isAdmin) {
+      // non-admin แก้ได้เฉพาะเบอร์ 2, 3
+      payload = {
+        id, phone2, phone3,
+        editedBy: currentLineUser + " (LINE)",
+        editType: 'phoneOnly'
+      };
+    } else {
+      // admin หรือเพิ่มใหม่
+      const hospital = document.getElementById("hospitalInput").value.trim();
+      const phone1 = document.getElementById("phoneInput1").value.trim();
+      if (!hospital || !phone1) { showToast("⚠️ กรุณากรอกโรงพยาบาลและเบอร์หลัก"); return; }
+      payload = {
+        id, hospital,
+        department: getDeptValue(),
+        name: document.getElementById("nameInput").value.trim() || '-',
+        phone: phone1, phone2, phone3,
+        addedBy: currentLineUser + " (LINE)"
+      };
+    }
+
+    const btn = document.getElementById("saveBtn");
+    btn.textContent = "⏳ กำลังบันทึก..."; btn.disabled = true;
+
+    const action = !id ? 'addContact' : (isEditMode && !isAdmin ? 'editPhoneOnly' : 'editContact');
+
     try {
-      const res=await gasPost(payload.id===''?'addContact':'editContact',payload);
-      closeForm(); showToast("✅ "+(res.message||"บันทึกสำเร็จ")); setTimeout(()=>location.reload(),1500);
+      const res = await gasPost(action, payload);
+      closeForm(); showToast("✅ " + (res.message || "บันทึกสำเร็จ")); setTimeout(()=>location.reload(),1500);
     } catch(e) { showToast("❌ "+e.message); btn.textContent="บันทึก"; btn.disabled=false; }
   }
 
-  function highlight(text,q) { if(!q||!text)return text; return String(text).replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),'<mark class="highlight">$1</mark>'); }
+  function highlight(text,q) { if(!q||!text)return text; return String(text).replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`,'gi'),'<mark class="highlight">$1</mark>'); }
   function escAttr(str) { return String(str||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
   function showToast(msg,duration=3000) { const el=document.getElementById("toast"); el.textContent=msg; el.style.opacity="1"; setTimeout(()=>{el.style.opacity="0";},duration); }
-
   document.addEventListener('contextmenu',e=>e.preventDefault());
   </script>
 </body>
