@@ -218,12 +218,8 @@
   }
 
   async function gasPost(action, payload = {}) {
-  const params = new URLSearchParams({ 
-    action, 
-    ...Object.fromEntries(
-      Object.entries(payload).map(([k,v]) => [k, String(v)])
-    )
-  });
+  const params = new URLSearchParams({ action });
+  Object.entries(payload).forEach(([k,v]) => params.append(k, String(v ?? '')));
   const res = await fetch(`${GAS_URL}?${params}`);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
