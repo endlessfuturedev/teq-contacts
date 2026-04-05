@@ -218,14 +218,17 @@
   }
 
   async function gasPost(action, payload = {}) {
-    const res = await fetch(GAS_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...payload })
-    });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    return data;
-  }
+  const params = new URLSearchParams({ 
+    action, 
+    ...Object.fromEntries(
+      Object.entries(payload).map(([k,v]) => [k, String(v)])
+    )
+  });
+  const res = await fetch(`${GAS_URL}?${params}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
 
   // ============================================================
   // INIT
