@@ -124,13 +124,13 @@
       <input type="text" id="nameInput" placeholder="ชื่อเล่น / ชื่อจริง" class="w-full border rounded-xl p-3 mb-3 text-sm focus:border-blue-500 focus:outline-none">
 
       <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์โทรหลัก <span id="reqPhone" class="text-red-400">*</span></label>
-      <input type="text" id="phoneInput1" inputmode="tel" placeholder="0XX-XXX-XXXX" class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
+      <input type="tel" id="phoneInput1" placeholder="0XX-XXX-XXXX" class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
 
       <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์ 2 / เบอร์ต่อ</label>
-      <input type="text" id="phoneInput2" inputmode="tel" placeholder="เช่น 081-234-5678 หรือ ต่อ 101" class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
+      <input type="tel" id="phoneInput2" placeholder="เช่น 081-234-5678 หรือ ต่อ 101" class="w-full border rounded-xl p-3 mb-2 text-sm focus:border-blue-500 focus:outline-none">
 
       <label class="block text-sm font-medium text-gray-600 mb-1">เบอร์ 3</label>
-      <input type="text" id="phoneInput3" inputmode="tel" placeholder="ถ้ามี" class="w-full border rounded-xl p-3 mb-4 text-sm focus:border-blue-500 focus:outline-none">
+      <input type="tel" id="phoneInput3" placeholder="ถ้ามี" class="w-full border rounded-xl p-3 mb-4 text-sm focus:border-blue-500 focus:outline-none">
 
       <div id="deleteSection" class="hidden mb-3">
         <button onclick="openPinModal()" class="w-full py-2.5 rounded-xl text-red-500 border border-red-200 text-sm font-medium">🗑 ลบรายชื่อนี้</button>
@@ -218,13 +218,14 @@
   }
 
   async function gasPost(action, payload = {}) {
-  const params = new URLSearchParams({ action });
-  Object.entries(payload).forEach(([k,v]) => params.append(k, String(v ?? '')));
-  const res = await fetch(`${GAS_URL}?${params}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  return data;
-}
+    const res = await fetch(GAS_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
 
   // ============================================================
   // INIT
@@ -477,10 +478,21 @@
     const btn=document.getElementById("saveBtn"); btn.textContent="บันทึก"; btn.disabled=false;
   }
 
+  function formatPhone(phone) {
+    const s = String(phone || '').trim();
+    if (!s) return '';
+    const digits = s.replace(/[^0-9]/g, '');
+    // ถ้ามีตัวอักษรปนอยู่ (เช่น "ต่อ 101") คืนค่าเดิม
+    if (digits.length !== s.replace(/[-\s]/g,'').length) return s;
+    if (digits.length === 10) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
+    if (digits.length === 9)  return `${digits.slice(0,2)}-${digits.slice(2,5)}-${digits.slice(5)}`;
+    return s; // หลักอื่นคืนค่าเดิม
+  }
+
   async function saveData() {
     const id = document.getElementById("formId").value;
-    const phone2 = document.getElementById("phoneInput2").value.trim();
-    const phone3 = document.getElementById("phoneInput3").value.trim();
+    const phone2 = formatPhone(document.getElementById("phoneInput2").value.trim());
+    const phone3 = formatPhone(document.getElementById("phoneInput3").value.trim());
 
     let payload;
 
@@ -494,7 +506,7 @@
     } else {
       // admin หรือเพิ่มใหม่
       const hospital = document.getElementById("hospitalInput").value.trim();
-      const phone1 = document.getElementById("phoneInput1").value.trim();
+      const phone1 = formatPhone(document.getElementById("phoneInput1").value.trim());
       if (!hospital || !phone1) { showToast("⚠️ กรุณากรอกโรงพยาบาลและเบอร์หลัก"); return; }
       payload = {
         id, hospital,
